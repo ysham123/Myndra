@@ -1,17 +1,38 @@
 from collections import deque
 import networkx as nx
+from typing import List, Tuple
 #short term memory
+from collections import deque
+
 class EpisodicMemory:
-    def __init__(self, max_length=50):
-        self.memory = {} #agent id:deque of recent strings
-    
-    def store(self, agent_id:str, content:str):
-        #store new memory string for agent
-        pass
+    def __init__(self, max_length=50, strict_mode=False):
+        if max_length <= 0:
+            raise ValueError("Max Length must be > 0")
+        self.memory = {}  # agent_id: deque of recent strings
+        self.max_length = max_length
+        self.strict_mode = strict_mode
+
+    def store(self, agent_id: str, content: str):
+        if not isinstance(agent_id, str) or not agent_id.strip():
+            raise ValueError("Agent ID is missing or invalid")
+            
+        if not isinstance(content, str) or not content.strip():
+            return  # ignore empty
+
+        if agent_id not in self.memory:
+            if self.strict_mode:
+                raise ValueError(f"Agent '{agent_id}' not in memory")
+            self.memory[agent_id] = deque(maxlen=self.max_length)
+
+        # store content (auto-evicts oldest if full)
+        self.memory[agent_id].append(content)
+        
+
+
     def get_recent(self, agent_id:str, n:int) -> List[str]:
         #return last n memories for the agent
         pass
-    def recieve(self, query:str) -> List[Tuple[str,str]]:
+    def register_agent(self, query:str) -> List[Tuple[str,str]]:
         #return all memories matching a keyword
         pass
 
