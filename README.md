@@ -1,5 +1,7 @@
 # Myndra: Multi-Agent Orchestration Framework
 
+![Myndra Overview](image.png)
+
 > **Current Development Focus:** Memory Module & Testing (August 2025)
 
 ## Overview
