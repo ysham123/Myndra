@@ -1,0 +1,233 @@
+# 🧠 `memory_module.py` Developer Documentation — *Myndra Internal*
+
+> Version: v0.1
+> Author: Yosef Shammout
+> Purpose: A modular shared memory system enabling dynamic collaboration between moldable agents.
+
+---
+
+## 🔷 Overview
+
+The memory module sits at the heart of **Myndra's orchestration system**.
+
+```plaintext
++-------------------+         +--------------------+
+|    Agent A        | <---->  |                    |
++-------------------+         |                    |
+                              |   Shared Memory    |
++-------------------+         |                    |
+|    Agent B        | <---->  |                    |
++-------------------+         +--------------------+
+```
+
+The goal is to let agents:
+
+* Log what they see/do/decide (short- and long-term)
+* Ask questions like: "Have I done this before?", or "What did Agent B say earlier?"
+
+We split memory into:
+
+* **Short-term** (Episodic)
+* **Long-term** (Knowledge Graph)
+
+---
+
+## 🧠 1. EpisodicMemory — Short-Term Memory
+
+> Stores recent "experiences" per agent — like a journal or chat log.
+
+### 🔹 Concept
+
+```plaintext
+Agent A:
+┌──── Recent Observations ────┐
+│ "Tried idea X"              │
+│ "Failed attempt at Y"       │
+│ "Received message from B"   │
+└─────────────────────────────┘
+```
+
+Each agent gets a rolling buffer (e.g., max 50 entries).
+
+### 🔹 Class Layout
+
+```python
+from collections import deque
+
+class EpisodicMemory:
+    def __init__(self, max_length=50):
+        self.memory = {}  # agent_id: deque of recent strings
+```
+
+### 🔹 Methods
+
+```python
+def store(self, agent_id: str, content: str):
+    """Store a new memory string for the agent."""
+    ...
+```
+
+```python
+def get_recent(self, agent_id: str, n: int = 5) -> List[str]:
+    """Return the last n memories for this agent."""
+    ...
+```
+
+```python
+def retrieve(self, query: str) -> List[Tuple[str, str]]:
+    """Return all memories matching a keyword."""
+    ...
+```
+
+### 🔹 Diagram
+
+```plaintext
+                   ┌────────────┐
+Agent A ── store ─▶│   deque()  │◀── get_recent()
+                   └────────────┘
+```
+
+---
+
+## 🧠 2. KnowledgeGraph — Long-Term Memory
+
+> Graph-based structure to store knowledge, facts, and semantic links.
+
+### 🔹 Concept
+
+```plaintext
+"Tool X failed" → "Try Tool Y"
+       │                │
+       ▼                ▼
+   ["Experiment 1"]   ["Agent B suggestion"]
+```
+
+Each observation becomes a node, and context connects it to past ones.
+
+### 🔹 Class Layout
+
+```python
+import networkx as nx
+
+class KnowledgeGraph:
+    def __init__(self):
+        self.graph = nx.DiGraph()
+```
+
+### 🔹 Methods
+
+```python
+def add_node(self, agent_id: str, content: str, context: Optional[str]):
+    """Add a node (observation) and optionally link it to context."""
+    ...
+```
+
+```python
+def get_node(self, query: str) -> List[str]:
+    """Search graph nodes by keyword."""
+    ...
+```
+
+```python
+def get_related(self, query: str, depth: int = 1) -> List[str]:
+    """Find related nodes from a starting query node."""
+    ...
+```
+
+### 🔹 Diagram
+
+```plaintext
+    ┌──────────────┐        ┌──────────────┐
+    │  "Tool X"    │ ───▶── │  "Tool Y"    │
+    └──────────────┘        └──────────────┘
+          ▲
+          │ context="use alternate"
+```
+
+---
+
+## 🧠 3. SharedMemory — Full Interface
+
+> Combines both modules and serves as the memory API for agents + orchestrator.
+
+### 🔹 Concept
+
+```plaintext
+         Agent writes to memory:
+   agent_id="A", content="Tried X", context="Prompt"
+
+SharedMemory:
+- Stores short-term log
+- Adds node to graph
+```
+
+### 🔹 Class Layout
+
+```python
+class SharedMemory:
+    def __init__(self):
+        self.short_term = EpisodicMemory()
+        self.long_term = KnowledgeGraph()
+```
+
+### 🔹 Methods
+
+```python
+def write(self, agent_id: str, content: str, context: Optional[str] = None):
+    """Store content into both short and long-term memory."""
+    ...
+```
+
+```python
+def retrieve(self, agent_id: str, query: str) -> List[str]:
+    """Query both memory types and combine results."""
+    ...
+```
+
+```python
+def get_recent(self, agent_id: str, n: int = 5) -> List[str]:
+    """Get last n short-term entries."""
+    ...
+```
+
+### 🔹 Diagram
+
+```plaintext
+               +---------------------+
+Agent A ───▶──▶│   SharedMemory      │
+               │  ┌───────────────┐  │
+               │  │EpisodicMemory │  │
+               │  └───────────────┘  │
+               │  ┌───────────────┐  │
+               │  │KnowledgeGraph │  │
+               │  └───────────────┘  │
+               +---------------------+
+```
+
+---
+
+## 🧪 Testing Your Work
+
+Write a script like this to test each component:
+
+```python
+if __name__ == "__main__":
+    sm = SharedMemory()
+    
+    sm.write("agent_1", "Tried the hammer", context=None)
+    sm.write("agent_1", "Hammer failed", context="Tried the hammer")
+    sm.write("agent_1", "Switched to drill", context="Hammer failed")
+    
+    print("Recent memory:", sm.get_recent("agent_1", n=2))
+    print("Search 'drill':", sm.retrieve("agent_1", "drill"))
+    print("Graph Related to 'Hammer failed':", sm.long_term.get_related("Hammer failed"))
+```
+
+---
+
+## 🏁 Final Notes
+
+* Keep memory modules **modular** — don't let short-term and long-term logic mix.
+* Build incrementally: start with `.store()` and `.get_recent()` only.
+* Use `print()` and tests to validate what's being written/read.
+
