@@ -6,7 +6,17 @@
 
 ## Overview
 
-Myndra is a multi-agent orchestration framework designed for dynamic, human-like AI collaboration. Unlike existing systems with static agent roles and rigid workflows, Myndra introduces a novel adaptive orchestrator that can modify the agent team composition, interaction order, and responsibilities in real time.
+Myndra is a Multi-Agent Reinforcement Learning (MARL) orchestration framework designed for dynamic, human-like AI collaboration. Unlike existing systems with static agent roles and rigid workflows, Myndra introduces a novel adaptive orchestrator that can modify the agent team composition, interaction order, and responsibilities in real time.
+
+## What is MARL?
+
+Multi-Agent Reinforcement Learning (MARL) studies how multiple learning agents act and learn concurrently in a shared environment. Each agent optimizes its policy via rewards while coordinating, competing, or cooperating with others.
+
+In Myndra:
+- **Agents** learn and adapt behaviors from feedback and shared memory.
+- **Orchestrator** coordinates agent roles and interaction order to optimize team performance.
+- **Memory** (episodic + long-term knowledge graph) provides context for better credit assignment and decision-making.
+- **Objectives** can be cooperative, competitive, or mixed, depending on the task design.
 
 ## Key Features
 
