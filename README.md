@@ -59,7 +59,7 @@ We are currently developing the testing suite for the memory module to ensure:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/Myndra.git
+git clone https://github.com/ysham123/Myndra.git
 
 # Install dependencies
 pip install -r requirements.txt
