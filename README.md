@@ -46,6 +46,23 @@ The memory system is the core of Myndra's adaptive capabilities, consisting of:
 2. **KnowledgeGraph (Long-term):** Content-centric directed graph for semantic relationships
 3. **SharedMemory:** Unified interface combining both memory types
 
+## Memory Semantics
+
+The memory APIs behave as follows (see `memory/memory_module.py`):
+
+- **EpisodicMemory**
+  - Stores per-agent events as dicts: `{"timestamp", "agent_id", "content"}`.
+  - `strict_mode=True`: `get_recent()` raises `KeyError` for unknown agents.
+
+- **KnowledgeGraph**
+  - `add_node(agent_id, content, context=None, ...)` adds normalized text nodes and creates an edge `context -> content` when context is provided.
+  - `get_related(node, depth)` performs BFS over predecessors and returns a list of edge dicts: `{ "src": node, "dst": predecessor }`.
+
+- **SharedMemory**
+  - `write(agent_id, content, context=None)` prefixes agent IDs, writes to episodic, adds KG nodes/edges, and links `task -> content` when `task\d+` is detected.
+  - `get_recent(agent_id, n)` returns a list of episodic event dicts for that agent.
+  - `retrieve(agent_id, query)` returns a list of dicts with `{"content": str}` from hybrid episodic + KG search.
+
 ## Development Timeline
 
 | Date | Milestone |
@@ -76,8 +93,8 @@ git clone https://github.com/ysham123/Myndra.git
 # Install dependencies
 pip install -r requirements.txt
 
-# Run tests (when available)
-python -m memory.memory_tests
+# Run tests
+pytest -v
 ```
 
 ## Contributing
