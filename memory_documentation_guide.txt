@@ -231,3 +231,18 @@ if __name__ == "__main__":
 * Build incrementally: start with `.store()` and `.get_recent()` only.
 * Use `print()` and tests to validate what's being written/read.
 
+
+write("alice", "Assigned task 42 to Bob", context="standup")
+│
+├─ episodic: append {"episode_id":..., "agent_id":"alice", "content":"Assigned task 42...", "context":"standup", "timestamp":...}
+└─ extract:
+    ents = [{"id":"task:42","type":"task"}]
+    rels = [{"src":"agent:alice","dst":"task:42","type":"MENTIONS"}]
+   ├─ KG add_node("task:42")   ← (type may be missing on creation unless you apply the fix)
+   └─ KG add_edge(agent:alice --MENTIONS--> task:42, with from_episode_id=..., evidence=content[:160])
+
+retrieve("alice", "task 42")
+│
+├─ episodes: scores the recent sentence high (keyword + fresh)
+└─ KG: hits node "task:42", prints node + a few outgoing relations
+→ merged top-10

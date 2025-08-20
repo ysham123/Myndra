@@ -3,8 +3,10 @@ import datetime
 from datetime import timezone
 import json
 import re
+from hashlib import sha1
 import networkx as nx
 from typing import List, Tuple, Optional
+
 
 class EpisodicMemory:
     """
@@ -125,9 +127,10 @@ class KnowledgeGraph:
                 updated_at=self._now_iso(),
                 **attrs,
             )
-            # If a 'type' attribute is provided, also mirror it into tags.
+            # If a 'type' attribute is provided, also mirror it into tags and set 'type'.
             if "type" in attrs:
                 self.graph.nodes[content_key]["tags"].add(attrs["type"])
+                self.graph.nodes[content_key]["type"] = attrs["type"]
             self.graph.graph["nodes_added"] += 1
         else:
             node_data = self.graph.nodes[content_key]
@@ -221,17 +224,19 @@ class KnowledgeGraph:
             if d >= depth:
                 continue
             for src, dst, eattrs in neighbors(cur):
-                if dst in visited:
+                # pick the true neighbor node we should visit next
+                neighbor = dst if src == cur else src
+                if neighbor in visited:
                     continue
-                visited.add(dst)
+                visited.add(neighbor)
                 out.append({
                     "src": src,
                     "dst": dst,
                     "type": eattrs.get("type", "related"),
                     "edge": dict(eattrs),
-                    "node": self.get_node_by_id(dst) or {"id": dst},
+                    "node": self.get_node_by_id(neighbor) or {"id": neighbor},
                 })
-                queue.append((dst, d + 1))
+                queue.append((neighbor, d + 1))
                 if limit is not None and len(out) >= limit:
                     return out
         return out
@@ -240,21 +245,26 @@ class KnowledgeGraph:
 def now_iso():
     return datetime.datetime.now(timezone.utc).isoformat()
 
+
 def mk_episode_id(agent_id, content, timestamp):
-    return f"{agent_id}_{timestamp}"
+    # hash-based ID to reduce accidental duplicates
+    base = f"{agent_id}|{timestamp}|{(content or '')[:64]}"
+    return sha1(base.encode()).hexdigest()
+
 
 def jaccard(query, text):
     """
     Very simple token-overlap score (v0.1). Brittle for morphology/semantics.
     TODO: replace with embeddings-based similarity.
     """
-    query_words = set((query or "").lower().split())
-    text_words = set((text or "").lower().split())
-    if not query_words or not text_words:
+    q = set((query or "").lower().split())
+    t = set((text or "").lower().split())
+    if not q or not t:
         return 0.0
-    inter = query_words.intersection(text_words)
-    union = query_words.union(query_words | text_words)  # equivalent to text_words union
-    return len(inter) / len(query_words | text_words)
+    inter = q & t
+    union = q | t
+    return len(inter) / len(union)
+
 
 def age_in_days(row):
     """
@@ -279,6 +289,7 @@ def age_in_days(row):
     except Exception:
         return 0.0
 
+
 def decay(age_days):
     """
     Linear freshness decay with ~30-day shelf life.
@@ -288,8 +299,10 @@ def decay(age_days):
         return 1.0
     return max(0.0, 1.0 - (age_days / 30.0))
 
+
 def topk(items, k):
     return sorted(items, reverse=True)[:k]
+
 
 def dedupe(items):
     seen = set()
@@ -300,11 +313,14 @@ def dedupe(items):
             result.append((score, text))
     return result
 
+
 def normalize(text):
     return (text or "").lower().strip()
 
+
 def match_nodes(kg, query):
     return kg.get_node(query)
+
 
 def fmt_node(kg, node_id):
     node = kg.get_node_by_id(node_id)
@@ -312,8 +328,10 @@ def fmt_node(kg, node_id):
         return f"Node: {node_id}"
     return f"Node: {node['id']} (Type: {node.get('type', 'unknown')})"
 
+
 def fmt_edge(rel):
     return f"Relation: {rel.get('src', '?')} --[{rel.get('type', '?')}]--> {rel.get('dst', '?')}"
+
 
 def pretty(row):
     if isinstance(row, str):
@@ -324,7 +342,8 @@ def pretty(row):
             return row
     return str(row)
 
-def edge_recency(rel: dict) -> float:
+
+def edge_recency(rel: dict) -> float():
     """
     Recency score for edges.
     Canonical timestamp: 'created_at'. Falls back to 'timestamp' if needed.
@@ -362,21 +381,24 @@ class SharedMemory:
         self.PAT_TASK = re.compile(r"\btask\s*(\d+)\b", re.I)
 
     def write(self, agent_id: str, content: str, context: Optional[str] = None):
+        # Normalize agent id once for consistency (e.g., "agent:alice")
+        agent_key = agent_id if agent_id.startswith("agent:") else f"agent:{agent_id}"
         ts = now_iso()
-        ep_id = mk_episode_id(agent_id, content, ts)
+        ep_id = mk_episode_id(agent_key, content, ts)
         # Stable episodic schema; unknown keys ignored by readers.
-        self.short_term.store(agent_id, json.dumps({
+        self.short_term.store(agent_key, json.dumps({
             "episode_id": ep_id,
-            "agent_id": agent_id,
+            "agent_id": agent_key,
             "content": content,
             "context": context,
             "timestamp": ts
         }))
         # Stub NER; future: agents, tools, docs, etc.
-        ents, rels = self.extract(agent_id, content, context)
+        ents, rels = self.extract(agent_key, content, context)
         for e in ents:
             attrs = {"type": e.get("type")} if e.get("type") else {}
-            self.long_term.add_node(agent_id, content=e["id"], context=None, **attrs)
+            # Use actual context so a context → entity edge is created
+            self.long_term.add_node(agent_key, content=e["id"], context=context, **attrs)
         for r in rels:
             self.long_term.add_edge(
                 r["src"], r["dst"],
@@ -425,13 +447,15 @@ class SharedMemory:
 
     def retrieve(self, agent_id: str, query: str):
         """Merge episodic and KG hits, dedupe by text, return top 10."""
+        agent_key = agent_id if agent_id.startswith("agent:") else f"agent:{agent_id}"
         q = normalize(query)
-        ep = self.search_episodes(agent_id, q)
+        ep = self.search_episodes(agent_key, q)
         kg = self.search_kg(q)
         return [t for _, t in topk(dedupe(ep + kg), 10)]
 
     def get_recent(self, agent_id, n=5):
-        rows = self.short_term.get_recent(agent_id, n)
+        agent_key = agent_id if agent_id.startswith("agent:") else f"agent:{agent_id}"
+        rows = self.short_term.get_recent(agent_key, n)
         return [pretty(r) for r in rows]
 
     def extract(self, agent_id: str, content: str, context: Optional[str]):
@@ -440,9 +464,10 @@ class SharedMemory:
         Current patterns:
           - task(\d+) → entity id 'task:{n}', relation agent:{agent_id} --[MENTIONS]--> task:{n}
         """
+        # agent_id is already normalized (e.g., "agent:alice")
         ents, rels = [], []
         for m in self.PAT_TASK.finditer(content):
             task_id = f"task:{m.group(1)}"
             ents.append({"id": task_id, "type": "task"})
-            rels.append({"src": f"agent:{agent_id}", "dst": task_id, "type": "MENTIONS"})
+            rels.append({"src": agent_id, "dst": task_id, "type": "MENTIONS"})
         return ents, rels
