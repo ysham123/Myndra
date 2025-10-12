@@ -12,3 +12,6 @@ orch = Orchestrator(registry, memory)
 subtasks = orch.plan("Analyze system performance metrics")
 print("Subtasks:", subtasks)
 print("Recent memory:", memory.get_recent("orchestrator"))
+
+assignments = orch.assign(["Gather all relevant data", "Analyze patterns", "Summarize findings"])
+print(assignments)

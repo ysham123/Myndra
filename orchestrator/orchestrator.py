@@ -40,7 +40,24 @@ class Orchestrator:
 
     def assign(self, subtasks):
         """assign subtasks to appropriate agents."""
-        pass
+        assignments = []
+
+        for task in subtasks:
+            task_lower = task.lower()
+            if "data" in task_lower or "gather" in task_lower:
+                agent = "DataAgent"
+            elif "analyze" in task_lower or "pattern" in task_lower:
+                agent = "AnalystAgent"
+            elif "summarize" in task_lower or "report" in task_lower:
+                agent = "SummarizerAgent"
+            else:
+                agent = "GeneralAgent"
+            assignments.append({"task" : task, "agent": agent})
+        self.memory.write("orchestrator", f"Assigned tasks: {assignments}")
+        return assignments
+
+
+
     def execute(self, assignments):
         """Execute each assignment and gather results."""
         pass
