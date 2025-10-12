@@ -12,9 +12,32 @@ class Orchestrator:
         self.registry = registry
         self.memory = memory
 
-    def run(self, goal):
+    def plan(self, goal):
         """Breaks high-level goal into smaller subtasks."""
-        pass    
+        self.memory.write("orchestrator", f"Received goal: {goal}")
+        goal_lower = goal.lower() 
+
+        if "analyze" in goal_lower:
+            subtasks = [
+                "Gather all relevant data",
+                "Analyze patterns or anomalies",
+                "Summarize the findings"
+            ]
+        elif "summarize" in goal_lower:
+            subtasks = [
+                "Identify main points",
+                "Write a concise summary"
+            ]
+        else:
+            subtasks = [
+                "Interpret the goal",
+                "Perform main action",
+                "Generate final report"
+            ]
+        self.memory.write("orchestrator", f"Planned subtasks: {subtasks}")
+        return subtasks
+
+
     def assign(self, subtasks):
         """assign subtasks to appropriate agents."""
         pass
