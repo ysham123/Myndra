@@ -1,47 +1,19 @@
 from orchestrator.orchestrator import Orchestrator
 from memory.memory_module import SharedMemory
 
-def main():
+if __name__ == "__main__":
+    print("\n========== MYNDRA ORCHESTRATION RUN ==========")
+
     # Initialize shared memory
     memory = SharedMemory()
 
-    # Initialize orchestrator (no agent registry yet)
-    orch = Orchestrator(None, memory)
+    # Initialize orchestrator with LLM planner enabled
+    orch = Orchestrator(None, memory, use_llm=True)
 
-    # Define high-level goal
+    # Set your goal
     goal = "Analyze performance metrics"
 
-    # === Full orchestration pipeline ===
-    subtasks = orch.plan(goal)
-    assignments = orch.assign(subtasks)
-    results = orch.execute(assignments)
-    adaptation = orch.adapt(results)
-
-    # === Display results ===
-    print("\n========== MYNDRA ORCHESTRATION RUN ==========")
-    print(f"Goal: {goal}\n")
-
-    print("Planned Subtasks:")
-    for s in subtasks:
-        print(f"  - {s}")
-
-    print("\nAssignments:")
-    for a in assignments:
-        print(f"  - {a['task']} → {a['agent']}")
-
-    print("\nExecution Results:")
-    for r in results:
-        print(f"  - {r['agent']} → {r['output']}")
-
-    print("\nAdaptation Summary:")
-    for ad in adaptation['adaptations']:
-        print(f"  - {ad['task']} → {ad['action']}")
-
-    print("\nRecent Memory (Orchestrator):")
-    for m in memory.get_recent("orchestrator"):
-        print(f"  • {m['timestamp']} | {m['content']}")
+    # Run the full orchestration pipeline
+    adaptation_summary = orch.run(goal)
 
     print("\n==============================================")
-
-if __name__ == "__main__":
-    main()

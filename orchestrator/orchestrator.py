@@ -1,10 +1,10 @@
-from orchestrator.planner import Planner
+from orchestrator.planner import PlannerAdapter
 
 class Orchestrator:
-    def __init__(self, registry, memory):
+    def __init__(self, registry, memory, use_llm=False):
         self.registry = registry
         self.memory = memory
-        self.planner = Planner()
+        self.planner = PlannerAdapter(use_llm=use_llm)
 
     def plan(self, goal):
         subtasks = self.planner.decompose(goal)
@@ -83,5 +83,34 @@ class Orchestrator:
 
 
     def run(self, goal):
-        """Main entry point for orchestration."""
-        pass
+        """Run the full orchestration pipeline."""
+        print(f"\nGoal: {goal}")
+
+    # 1. Plan
+        subtasks = self.planner.decompose(goal)
+        print("\nPlanned Subtasks:")
+        for t in subtasks:
+            print(f"  - {t}")
+
+    # 2. Assign
+        assignments = self.assign(subtasks)
+        print("\nAssignments:")
+        for a in assignments:
+            print(f"  - {a['task']} → {a['agent']}")
+
+    # 3. Execute
+        results = self.execute(assignments)
+        print("\nExecution Results:")
+        for r in results:
+            print(f"  - {r['agent']} → {r['output']}")
+
+    # 4. Adapt
+        adaptation = self.adapt(results)
+        print("\nAdaptation Summary:")
+        for a in adaptation["adaptations"]:
+            print(f"  - {a['task']} → {a['action']}")
+
+    # 5. Memory Log (optional)
+        print("\nRecent Memory (Orchestrator):")
+        for m in self.memory.get_recent("agent:orchestrator"):
+            print(f"  • {m['timestamp']} | {m['content']}")

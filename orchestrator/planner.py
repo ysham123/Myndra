@@ -1,45 +1,87 @@
+import os
+from openai import OpenAI
+from dotenv import load_dotenv
+load_dotenv()
+
 class Planner:
-    """
-    Phase 1: Rule-based planner.
-    Decomposes high-level goals into ordered subtasks.
-    Later, this will be upgraded to an LLM-driven dynamic planner.
-    """
+    """Phase 1: Rule-based planner. Decomposes high-level goals into ordered subtasks. Later, this 
+    will be upgraded to an LLM-driven dynamic planner."""
 
     def __init__(self):
         pass
 
     def decompose(self, goal):
-        """Break a high-level goal into smaller, actionable subtasks."""
+        """Rule-based task decomposition."""
         goal_lower = goal.lower()
 
-        # Simple keyword-based patterns for now
         if "analyze" in goal_lower:
-            subtasks = [
+            return [
                 "Gather all relevant data",
                 "Analyze patterns or anomalies",
                 "Summarize the findings"
             ]
         elif "design" in goal_lower:
-            subtasks = [
+            return [
                 "Define design objectives",
                 "Create initial concepts",
                 "Review and refine designs"
             ]
         elif "research" in goal_lower:
-            subtasks = [
+            return [
                 "Collect background information",
                 "Form hypotheses",
                 "Run experiments",
                 "Interpret results"
             ]
         else:
-            subtasks = [
+            return [
                 "Understand the goal context",
                 "Propose an action plan",
                 "Execute and report results"
             ]
 
-        return subtasks
 
 class LLMPlanner:
-    ''
+    """Phase 2: LLM-based planner using OpenAI GPT-5. Dynamically decomposes high-level goals into subtasks."""
+
+    def __init__(self, model="gpt-5-mini"):
+        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.model = model
+
+    def decompose(self, goal):
+        """Use GPT-5 to break a goal into a list of ordered subtasks."""
+
+        prompt = (
+            "You are a smart planning assistant. "
+            "Break the following high-level goal into 3–6 concise, actionable subtasks. "
+            "Each subtask should be clear and logically ordered.\n\n"
+            f"Goal: {goal}\n\nSubtasks:"
+        )
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        text = response.choices[0].message.content
+        subtasks = [
+            line.strip("123456.-• ").capitalize()
+            for line in text.split("\n")
+            if line.strip()
+        ]
+        return subtasks
+
+
+class PlannerAdapter:
+    """Adapter that switches between rule-based and LLM planners."""
+
+    def __init__(self, use_llm=False):
+        self.rule_based = Planner()
+        self.llm_based = LLMPlanner()
+        self.use_llm = use_llm
+
+    def decompose(self, goal):
+        if self.use_llm:
+            return self.llm_based.decompose(goal)
+        else:
+            return self.rule_based.decompose(goal)
