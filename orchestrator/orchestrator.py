@@ -1,42 +1,15 @@
-"""
-[ User Goal ]
-     ↓
-[ Planner ] → decomposes goal into subtasks
-     ↓
-[ Orchestrator ] → assigns tasks, gathers results
-     ↓
-[ Agents ] ↔ [ SharedMemory ]
-"""
+from orchestrator.planner import Planner
+
 class Orchestrator:
     def __init__(self, registry, memory):
         self.registry = registry
         self.memory = memory
+        self.planner = Planner()
 
     def plan(self, goal):
-        """Breaks high-level goal into smaller subtasks."""
-        self.memory.write("orchestrator", f"Received goal: {goal}")
-        goal_lower = goal.lower() 
-
-        if "analyze" in goal_lower:
-            subtasks = [
-                "Gather all relevant data",
-                "Analyze patterns or anomalies",
-                "Summarize the findings"
-            ]
-        elif "summarize" in goal_lower:
-            subtasks = [
-                "Identify main points",
-                "Write a concise summary"
-            ]
-        else:
-            subtasks = [
-                "Interpret the goal",
-                "Perform main action",
-                "Generate final report"
-            ]
+        subtasks = self.planner.decompose(goal)
         self.memory.write("orchestrator", f"Planned subtasks: {subtasks}")
         return subtasks
-
 
     def assign(self, subtasks):
         """assign subtasks to appropriate agents."""
@@ -96,7 +69,7 @@ class Orchestrator:
 
             if "error" in output or "failed" in output:
                 action = f"Reassignming task '{task}' due to error in {agent}"
-                self.memory.write("Orchestrator", action)
+                self.memory.write("orchestrator", action)
                 adjustments.append({"task": task, "action": "reassign"})
             else:
                 action = f"Task '{task}' by {agent} completed successfully"
