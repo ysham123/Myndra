@@ -60,7 +60,31 @@ class Orchestrator:
 
     def execute(self, assignments):
         """Execute each assignment and gather results."""
-        pass
+        results = []
+
+        for item in assignments:
+            agent = item["agent"]
+            task = item["task"]
+
+            #log start of task
+            self.memory.write("orchestrator", f"Executing task '{task}' assigned to {agent}")
+
+            #simulated result(placeholder until real agent is created)
+            simulated_output = f"[{agent} completed task: {task}]"
+
+            #log memory to result
+            self.memory.write(agent, simulated_output)
+
+            #store structured result
+            results.append({
+                "agent": agent,
+                "task": task,
+                "output": simulated_output
+            })
+
+        self.memory.write("orchestrator", f"Execution results: {results}")
+        return results
+
     def adapt(self, results):
         """Optional: adjust agent teams or task flow based on memory feedback."""
         pass
