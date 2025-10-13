@@ -1,17 +1,17 @@
 from orchestrator.orchestrator import Orchestrator
 from memory.memory_module import SharedMemory
 
-# For now, skip AgentRegistry until agent layer is implemented
 memory = SharedMemory()
+orch = Orchestrator(None, memory)
 
-# Placeholder since agents aren't ready yet
-registry = None  
+# 1. Plan → 2. Assign → 3. Execute
+subtasks = orch.plan("Analyze performance metrics")
+assignments = orch.assign(subtasks)
+results = orch.execute(assignments)
 
-orch = Orchestrator(registry, memory)
+print("Results:")
+for r in results:
+    print(r)
 
-subtasks = orch.plan("Analyze system performance metrics")
-print("Subtasks:", subtasks)
-print("Recent memory:", memory.get_recent("orchestrator"))
-
-assignments = orch.assign(["Gather all relevant data", "Analyze patterns", "Summarize findings"])
-print(assignments)
+print("\nRecent memory:")
+print(memory.get_recent("orchestrator"))
