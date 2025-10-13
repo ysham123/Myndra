@@ -87,7 +87,28 @@ class Orchestrator:
 
     def adapt(self, results):
         """Optional: adjust agent teams or task flow based on memory feedback."""
-        pass
+        adjustments = []
+
+        for result in results:
+            output = result["output"].lower()
+            agent = result["agent"]
+            task = result["output"]
+
+            if "error" in output or "failed" in output:
+                action = f"Reassignming task '{task}' due to error in {agent}"
+                self.memory.write("Orchestrator", action)
+                adjustments.append({"task": task, "action": "reassign"})
+            else:
+                action = f"Task '{task}' by {agent} completed successfully"
+                self.memory.write("orchestrator", action)
+                adjustments.append({"task": task, "action": "retain"})
+        summary = {"adaptations": adjustments}
+        self.memory.write("orchestrator", f"Adaptation summary: {summary}")
+        return summary
+
+
+
+
     def run(self, goal):
         """Main entry point for orchestration."""
         pass
