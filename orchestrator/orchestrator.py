@@ -92,7 +92,7 @@ class Orchestrator:
         for result in results:
             output = result["output"].lower()
             agent = result["agent"]
-            task = result["output"]
+            task = result["task"]
 
             if "error" in output or "failed" in output:
                 action = f"Reassignming task '{task}' due to error in {agent}"
