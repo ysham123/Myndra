@@ -42,19 +42,28 @@ class Planner:
 
 
 class LLMPlanner:
-    """Phase 2: LLM-based planner using OpenAI GPT-5. Dynamically decomposes high-level goals into subtasks."""
+    """Phase 3: Memory-aware LLM planner using GPT-5. Incorporates context from SharedMemory."""
 
-    def __init__(self, model="gpt-5-mini"):
+    def __init__(self, memory=None, model="gpt-5-mini"):
         self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self.model = model
+        self.memory = memory  # shared memory reference
 
     def decompose(self, goal):
-        """Use GPT-5 to break a goal into a list of ordered subtasks."""
+        """Use GPT-5 to break a goal into a list of ordered subtasks with memory context."""
+        # Retrieve past context from memory (if available)
+        context = ""
+        if self.memory:
+            try:
+                recent = self.memory.get_recent("agent:orchestrator")
+                context = "\n".join([f"- {m['content']}" for m in recent[-5:]]) if recent else ""
+            except Exception:
+                context = ""
 
         prompt = (
             "You are a smart planning assistant. "
-            "Break the following high-level goal into 3–6 concise, actionable subtasks. "
-            "Each subtask should be clear and logically ordered.\n\n"
+            "Use the following past context (if any) to plan more effectively.\n\n"
+            f"Context:\n{context}\n\n"
             f"Goal: {goal}\n\nSubtasks:"
         )
 
@@ -75,9 +84,9 @@ class LLMPlanner:
 class PlannerAdapter:
     """Adapter that switches between rule-based and LLM planners."""
 
-    def __init__(self, use_llm=False):
+    def __init__(self, use_llm=False, memory=None):
         self.rule_based = Planner()
-        self.llm_based = LLMPlanner()
+        self.llm_based = LLMPlanner(memory=memory)
         self.use_llm = use_llm
 
     def decompose(self, goal):

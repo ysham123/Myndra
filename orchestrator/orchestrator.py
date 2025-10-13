@@ -4,7 +4,7 @@ class Orchestrator:
     def __init__(self, registry, memory, use_llm=False):
         self.registry = registry
         self.memory = memory
-        self.planner = PlannerAdapter(use_llm=use_llm)
+        self.planner = PlannerAdapter(use_llm=True, memory=self.memory)
 
     def plan(self, goal):
         subtasks = self.planner.decompose(goal)
