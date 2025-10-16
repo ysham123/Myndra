@@ -50,8 +50,8 @@ class LLMPlanner:
         self.memory = memory  # shared memory reference
 
     def decompose(self, goal):
-        """Use GPT-5 to break a goal into a list of ordered subtasks with memory context."""
-        # Retrieve past context from memory (if available)
+        """Use GPT-4o-mini to break a goal into a list of ordered subtasks with memory context, returning JSON with task, agent, confidence."""
+        import json
         context = ""
         if self.memory:
             try:
@@ -61,24 +61,38 @@ class LLMPlanner:
                 context = ""
 
         prompt = (
-            "You are a smart planning assistant. "
-            "Use the following past context (if any) to plan more effectively.\n\n"
+            "You are an expert project planner. "
+            "Given a high-level goal and recent context, decompose the goal into a list of ordered subtasks. "
+            "Return ONLY a JSON list of objects. Each object must have fields: 'task' (the subtask as a string), "
+            "'agent' (the most suitable agent type, e.g. 'analyst', 'designer', etc.), and "
+            "'confidence' (a float between 0 and 1 for your confidence in this step). "
+            "If context is empty, proceed as best as possible.\n\n"
             f"Context:\n{context}\n\n"
-            f"Goal: {goal}\n\nSubtasks:"
+            f"Goal: {goal}\n\n"
+            "Respond with only the JSON list, no explanations."
         )
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": prompt}],
-        )
-
-        text = response.choices[0].message.content
-        subtasks = [
-            line.strip("123456.-• ").capitalize()
-            for line in text.split("\n")
-            if line.strip()
-        ]
-        return subtasks
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.4,
+            )
+            text = response.choices[0].message.content
+            subtasks = json.loads(text)
+            # Validate structure
+            if not isinstance(subtasks, list):
+                raise ValueError("Subtasks not a list")
+            for sub in subtasks:
+                if not all(k in sub for k in ("task", "agent", "confidence")):
+                    raise ValueError("Missing keys in subtask")
+            return subtasks
+        except Exception:
+            # Fallback: return a generic decomposition
+            return [
+                {"task": "Understand the goal context", "agent": "analyst", "confidence": 0.8},
+                {"task": "Propose an action plan", "agent": "planner", "confidence": 0.7},
+                {"task": "Execute and report results", "agent": "executor", "confidence": 0.7},
+            ]
 
 
 class PlannerAdapter:

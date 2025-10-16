@@ -27,3 +27,19 @@ class MoldableAgent(BaseAgent):
 
         return result
 
+    def mold(self, feedback):
+        """Adap the agent's internal parameters based on feedback.
+        This simulates reinforcement-improving or degrading confidence
+        """
+
+        if "error" in feedback.lower() or "fail" in feedback.lower():
+            self.confidence = max(0.1, self.confidence * 0.9)
+            update = f"Decreased confidence to {self.confidence:.2f} due to feedback: {feedback}"
+        elif "success" in feedback.lower() or "good" in feedback.lower():
+            self.confidence = min(1.0, self.confidence * 1.05)
+            update = f"Increased confidence to {self.confidence:.2f} due to feedback {feedback}"
+        else:
+            update = f"No change to confidence ({self.confidence:.2f}). Feedback: {feedback}"
+        
+        self.memory.write(self.name, update)
+        print(update)

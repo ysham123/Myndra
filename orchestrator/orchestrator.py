@@ -1,4 +1,5 @@
 from orchestrator.planner import PlannerAdapter
+from agents.agent_registry import get_agent
 
 class Orchestrator:
     def __init__(self, registry, memory, use_llm=False):
@@ -12,12 +13,25 @@ class Orchestrator:
         return subtasks
 
     def assign(self, subtasks):
-        """assign subtasks to appropriate agents."""
+        """assign subtasks to appropriate agents. Handles both string and dict subtasks."""
         assignments = []
 
-        for task in subtasks:
-            task_lower = task.lower()
-            if "data" in task_lower or "gather" in task_lower:
+        for subtask in subtasks:
+            # Handle if subtask is a dict (with possible agent/confidence), or str
+            if isinstance(subtask, dict):
+                task_text = subtask.get("task", "")
+                agent_hint = subtask.get("agent", "")
+                confidence = subtask.get("confidence", 0.5)
+            else:
+                task_text = str(subtask)
+                agent_hint = ""
+                confidence = 0.5
+
+            task_lower = task_text.lower()
+            # Agent assignment logic: prefer explicit agent_hint, else auto-detect
+            if agent_hint:
+                agent = agent_hint
+            elif "data" in task_lower or "gather" in task_lower:
                 agent = "DataAgent"
             elif "analyze" in task_lower or "pattern" in task_lower:
                 agent = "AnalystAgent"
@@ -25,7 +39,7 @@ class Orchestrator:
                 agent = "SummarizerAgent"
             else:
                 agent = "GeneralAgent"
-            assignments.append({"task" : task, "agent": agent})
+            assignments.append({"task": task_text, "agent": agent, "confidence": confidence})
         self.memory.write("orchestrator", f"Assigned tasks: {assignments}")
         return assignments
 
@@ -35,27 +49,20 @@ class Orchestrator:
         """Execute each assignment and gather results."""
         results = []
 
-        for item in assignments:
-            agent = item["agent"]
-            task = item["task"]
+        for assignment in assignments:
+            agent_name = assignment["agent"]
+            task = assignment["task"]
 
-            #log start of task
-            self.memory.write("orchestrator", f"Executing task '{task}' assigned to {agent}")
+            agent_instance = get_agent(agent_name, self.memory)
+            output = agent_instance.act(task)
+            results.append({"agent":agent_name,"task":task,"output":output})
+            
+            #only mold if agent supports it
+            if hasattr(agent_instance, "mold"):
+                agent_instance.mold("successfully completed task")
+                
+        self.memory.write("agent:orchestrator",f"Execution results: {results}")
 
-            #simulated result(placeholder until real agent is created)
-            simulated_output = f"[{agent} completed task: {task}]"
-
-            #log memory to result
-            self.memory.write(agent, simulated_output)
-
-            #store structured result
-            results.append({
-                "agent": agent,
-                "task": task,
-                "output": simulated_output
-            })
-
-        self.memory.write("orchestrator", f"Execution results: {results}")
         return results
 
     def adapt(self, results):
@@ -109,6 +116,12 @@ class Orchestrator:
         print("\nAdaptation Summary:")
         for a in adaptation["adaptations"]:
             print(f"  - {a['task']} → {a['action']}")
+
+    # New block for final summary
+        print("\nFinal Summary (LLM-driven):")
+        summarizer = get_agent("SummarizerAgent", self.memory)
+        summary = summarizer.act(results)
+        print(summary)
 
     # 5. Memory Log (optional)
         print("\nRecent Memory (Orchestrator):")
