@@ -1,4 +1,5 @@
 import os
+import json
 from openai import OpenAI
 from dotenv import load_dotenv
 load_dotenv()
@@ -42,16 +43,15 @@ class Planner:
 
 
 class LLMPlanner:
-    """Phase 3: Memory-aware LLM planner using GPT-5. Incorporates context from SharedMemory."""
+    """Memory-aware LLM planner using GPT-5-mini. Incorporates context from SharedMemory."""
 
     def __init__(self, memory=None, model="gpt-5-mini"):
         self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.model = model
+        self.model = model  # Using GPT-5-mini as the model
         self.memory = memory  # shared memory reference
 
     def decompose(self, goal):
-        """Use GPT-4o-mini to break a goal into a list of ordered subtasks with memory context, returning JSON with task, agent, confidence."""
-        import json
+        """Use GPT-5-mini to break a goal into a list of ordered subtasks with memory context, returning JSON with task, agent, confidence."""
         context = ""
         if self.memory:
             try:
@@ -73,7 +73,7 @@ class LLMPlanner:
         )
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.4,
             )
@@ -95,16 +95,27 @@ class LLMPlanner:
             ]
 
 
+
+
 class PlannerAdapter:
-    """Adapter that switches between rule-based and LLM planners."""
-
     def __init__(self, use_llm=False, memory=None):
-        self.rule_based = Planner()
-        self.llm_based = LLMPlanner(memory=memory)
         self.use_llm = use_llm
+        self.memory = memory
+        self.llm_planner = LLMPlanner(memory)
 
-    def decompose(self, goal):
+    def decompose(self, goal: str):
+        """Decompose a goal into subtasks (hierarchical if use_llm=True)."""
         if self.use_llm:
-            return self.llm_based.decompose(goal)
+            return self._decompose_with_llm(goal)
         else:
-            return self.rule_based.decompose(goal)
+            # simple fallback
+            return [
+                {"task": "Define objectives and KPIs", "agent": "AnalystAgent", "depends_on": [], "confidence": 0.9},
+                {"task": "Gather and preprocess data", "agent": "DataAgent", "depends_on": ["Define objectives and KPIs"], "confidence": 0.8},
+                {"task": "Run analysis and extract insights", "agent": "AnalystAgent", "depends_on": ["Gather and preprocess data"], "confidence": 0.7},
+                {"task": "Generate visualizations and summary report", "agent": "SummarizerAgent", "depends_on": ["Run analysis and extract insights"], "confidence": 0.9},
+            ]
+
+    def _decompose_with_llm(self, goal: str):
+        """Use an LLM to create a dependency-aware task hierarchy."""
+        return self.llm_planner.decompose(goal)
