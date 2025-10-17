@@ -43,7 +43,9 @@ class Planner:
 
 
 class LLMPlanner:
-    """Memory-aware LLM planner (default: GPT-5-mini; override via MYNDRA_PLANNER_MODEL)."""
+    """Memory-aware LLM planner that returns structured subtasks. Default model: GPT-5-mini
+    (override via MYNDRA_PLANNER_MODEL). Forces JSON object output and normalizes responses
+    from diverse model formats to a consistent list of {task, agent, confidence}."""
 
     def __init__(self, memory=None, model=None):
         # Resolve model (env override allowed) and initialize client from env OPENAI_API_KEY
@@ -55,6 +57,92 @@ class LLMPlanner:
             self.client = OpenAI()
         except Exception:
             self.client = None
+
+    def parse_llm_json(self, text):
+        """Helper to parse JSON from LLM output, trying to fix common formatting issues."""
+        import re
+
+        # Remove code fences if present
+        text = re.sub(r"^```json\s*|```$", "", text.strip(), flags=re.MULTILINE)
+
+        # Replace smart quotes with normal quotes
+        text = text.replace("“", "\"").replace("”", "\"").replace("‘", "'").replace("’", "'")
+
+        # Remove trailing commas before closing brackets/braces
+        text = re.sub(r",(\s*[\]}])", r"\1", text)
+
+        # Extract first JSON array if extra text leaked
+        start = text.find("[")
+        end = text.rfind("]")
+        if start != -1 and end != -1 and end > start:
+            text = text[start:end+1]
+
+        return json.loads(text)
+
+    def _extract_subtasks(self, parsed, raw_text=""):
+        """Normalize various JSON shapes to a list of subtasks.
+        Accepts either a list of objects or an object containing one of several list keys.
+        Each subtask is normalized to have keys: task(str), agent(str), confidence(float in [0,1]).
+        """
+        # If the model already returned a list
+        if isinstance(parsed, list):
+            subtasks = parsed
+        elif isinstance(parsed, dict):
+            # Common container keys the model might use
+            for key in ("subtasks", "steps", "tasks", "plan", "items", "list"):
+                if key in parsed and isinstance(parsed[key], list):
+                    subtasks = parsed[key]
+                    break
+            else:
+                # Nothing looks like a subtask list
+                raise ValueError("No subtask list found in JSON object")
+        else:
+            raise ValueError("Planner JSON is neither list nor object")
+
+        normalized = []
+        for idx, item in enumerate(subtasks):
+            if isinstance(item, str):
+                # Very lenient fallback: try to parse a line like
+                # "Task: X | agent: planner | confidence: 0.9"
+                t = item
+                agent = "general"
+                conf = 0.8
+                # crude parsing
+                import re
+                m_task = re.search(r"task\s*[:=]\s*(.+?)(?:\||$)", t, flags=re.I)
+                m_agent = re.search(r"agent\s*[:=]\s*([a-zA-Z]+)", t, flags=re.I)
+                m_conf = re.search(r"conf(?:idence)?\s*[:=]\s*([0-9.]+)", t, flags=re.I)
+                task_val = (m_task.group(1).strip() if m_task else t).strip().strip("|,")
+                if m_agent:
+                    agent = m_agent.group(1).strip().lower()
+                if m_conf:
+                    try:
+                        conf = float(m_conf.group(1))
+                    except Exception:
+                        conf = 0.8
+                item = {"task": task_val, "agent": agent, "confidence": conf}
+            elif isinstance(item, dict):
+                item = dict(item)
+            else:
+                raise ValueError(f"Unsupported subtask element type at index {idx}: {type(item)}")
+
+            # Normalize keys
+            task_val = item.get("task") or item.get("title") or item.get("name")
+            agent_val = (item.get("agent") or item.get("role") or "general").lower()
+            conf_val = item.get("confidence", 0.8)
+            try:
+                conf_val = float(conf_val)
+            except Exception:
+                conf_val = 0.8
+            # Clamp confidence
+            conf_val = max(0.0, min(1.0, conf_val))
+            # Restrict agent vocab
+            if agent_val not in ("analyst", "planner", "executor", "general"):
+                agent_val = "general"
+            if not task_val or not isinstance(task_val, str):
+                raise ValueError(f"Missing/invalid 'task' at index {idx}")
+            normalized.append({"task": task_val.strip(), "agent": agent_val, "confidence": conf_val})
+        return normalized
 
     def decompose(self, goal):
         """
@@ -75,16 +163,16 @@ class LLMPlanner:
             except Exception:
                 context = ""
 
+        text = ""
         prompt = (
             "You are an expert project planner. "
-            "Given a high-level goal and recent context, decompose the goal into a list of ordered subtasks. "
-            "Return ONLY a JSON list of objects. Each object must have fields: 'task' (string), "
-            "'agent' (one of: 'analyst', 'planner', 'executor', 'general'), and "
-            "'confidence' (a float between 0 and 1). "
-            "Do not invent new agent roles. If a design/visualization task is needed, use 'planner'.\n"
+            "Given a high-level goal and recent context, decompose the goal into ordered subtasks. "
+            "Return a single JSON object with this exact schema: \n"
+            "{\n  \"subtasks\": [\n    {\n      \"task\": string,\n      \"agent\": one of ['analyst','planner','executor','general'],\n      \"confidence\": number between 0 and 1\n    }\n  ]\n}\n"
+            "Do not include any extra fields or prose. If a design/visualization task is needed, use 'planner'.\n"
             f"Context:\n{context}\n\n"
             f"Goal: {goal}\n\n"
-            "Respond with only the JSON list, no explanations."
+            "Respond with only the JSON object."
         )
 
         if self.client is not None:
@@ -94,27 +182,27 @@ class LLMPlanner:
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=[{"role": "user", "content": prompt}],
+                    response_format={"type": "json_object"},
                 )
                 text = response.choices[0].message.content.strip()
-
-                # Extract first JSON array if extra text leaked
-                start = text.find("[")
-                end = text.rfind("]")
-                if start != -1 and end != -1:
-                    text = text[start:end+1]
-
-                subtasks = json.loads(text)
-                if not isinstance(subtasks, list):
-                    raise ValueError("Subtasks not a list")
-
-                for sub in subtasks:
-                    if not all(k in sub for k in ("task", "agent", "confidence")):
-                        raise ValueError("Missing keys in subtask")
-                    sub["agent"] = str(sub["agent"]).lower()
+                try:
+                    parsed = json.loads(text)
+                except Exception:
+                    # fall back to the permissive fixer
+                    parsed = self.parse_llm_json(text)
+                # Normalize whatever we got into a proper list
+                subtasks = self._extract_subtasks(parsed, raw_text=text)
 
                 print(f"\nLLM Planner: model={self.model} successfully generated plan.\n")
                 return subtasks
             except Exception as e:
+                # Log raw output to file for debugging
+                try:
+                    os.makedirs("logs", exist_ok=True)
+                    with open("logs/llm_planner_raw_output.log", "a", encoding="utf-8") as f:
+                        f.write(f"---\nGoal: {goal}\nError: {e}\nRaw output:\n{text}\n\n")
+                except Exception:
+                    pass
                 # Make the reason visible in the console so you know why it fell back
                 print(f"LLM plan failed: {e}")
 
@@ -151,4 +239,4 @@ class PlannerAdapter:
 
     def _decompose_with_llm(self, goal: str):
         """Use an LLM to create a dependency-aware task hierarchy."""
-        return self.llm_planner.decompose(goal)
+        return self.llm_planner.decompose(goal) 
