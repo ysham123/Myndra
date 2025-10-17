@@ -3,9 +3,13 @@ from agents.agent_registry import get_agent
 
 class Orchestrator:
     def __init__(self, registry, memory, use_llm=False):
+        import os
         self.registry = registry
         self.memory = memory
-        self.planner = PlannerAdapter(use_llm=use_llm, memory=self.memory)
+        self.planner = PlannerAdapter(
+            use_llm=os.getenv("MYNDRA_USE_LLM", "0") == "1",
+            memory=self.memory
+        )
 
     def plan(self, goal):
         subtasks = self.planner.decompose(goal)

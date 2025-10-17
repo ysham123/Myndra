@@ -43,65 +43,98 @@ class Planner:
 
 
 class LLMPlanner:
-    """Memory-aware LLM planner using GPT-5-mini. Incorporates context from SharedMemory."""
+    """Memory-aware LLM planner (default: GPT-5-mini; override via MYNDRA_PLANNER_MODEL)."""
 
-    def __init__(self, memory=None, model="gpt-5-mini"):
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.model = model  # Using GPT-5-mini as the model
-        self.memory = memory  # shared memory reference
+    def __init__(self, memory=None, model=None):
+        # Resolve model (env override allowed) and initialize client from env OPENAI_API_KEY
+        self.model = model or os.getenv("MYNDRA_PLANNER_MODEL") or "gpt-5-mini"
+        print(f"🔧 LLMPlanner: using model '{self.model}'.")
+        self.memory = memory
+        try:
+            # OpenAI() reads OPENAI_API_KEY from the environment
+            self.client = OpenAI()
+        except Exception:
+            self.client = None
 
     def decompose(self, goal):
-        """Use GPT-5-mini to break a goal into a list of ordered subtasks with memory context, returning JSON with task, agent, confidence."""
+        """
+        Use the LLM to return a JSON list of {task, agent, confidence}.
+        Falls back to a generic plan if the LLM is unavailable or returns invalid output.
+        """
+        # Gather recent orchestrator context (best-effort)
         context = ""
-        if self.memory:
+        if self.memory is not None:
             try:
                 recent = self.memory.get_recent("agent:orchestrator")
-                context = "\n".join([f"- {m['content']}" for m in recent[-5:]]) if recent else ""
+                if recent:
+                    def _fmt(m):
+                        if isinstance(m, dict) and "content" in m:
+                            return f"- {m['content']}"
+                        return f"- {str(m)}"
+                    context = "\n".join([_fmt(m) for m in recent[-5:]])
             except Exception:
                 context = ""
 
         prompt = (
             "You are an expert project planner. "
             "Given a high-level goal and recent context, decompose the goal into a list of ordered subtasks. "
-            "Return ONLY a JSON list of objects. Each object must have fields: 'task' (the subtask as a string), "
-            "'agent' (the most suitable agent type, e.g. 'analyst', 'designer', etc.), and "
-            "'confidence' (a float between 0 and 1 for your confidence in this step). "
-            "If context is empty, proceed as best as possible.\n\n"
+            "Return ONLY a JSON list of objects. Each object must have fields: 'task' (string), "
+            "'agent' (one of: 'analyst', 'planner', 'executor', 'general'), and "
+            "'confidence' (a float between 0 and 1). "
+            "Do not invent new agent roles. If a design/visualization task is needed, use 'planner'.\n"
             f"Context:\n{context}\n\n"
             f"Goal: {goal}\n\n"
             "Respond with only the JSON list, no explanations."
         )
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.4,
-            )
-            text = response.choices[0].message.content
-            subtasks = json.loads(text)
-            # Validate structure
-            if not isinstance(subtasks, list):
-                raise ValueError("Subtasks not a list")
-            for sub in subtasks:
-                if not all(k in sub for k in ("task", "agent", "confidence")):
-                    raise ValueError("Missing keys in subtask")
-            return subtasks
-        except Exception:
-            # Fallback: return a generic decomposition
-            return [
-                {"task": "Understand the goal context", "agent": "analyst", "confidence": 0.8},
-                {"task": "Propose an action plan", "agent": "planner", "confidence": 0.7},
-                {"task": "Execute and report results", "agent": "executor", "confidence": 0.7},
-            ]
+
+        if self.client is not None:
+            try:
+                # Note: Some GPT-5 endpoints only support the default temperature and reject custom values.
+                # We omit the temperature parameter for maximum compatibility.
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                text = response.choices[0].message.content.strip()
+
+                # Extract first JSON array if extra text leaked
+                start = text.find("[")
+                end = text.rfind("]")
+                if start != -1 and end != -1:
+                    text = text[start:end+1]
+
+                subtasks = json.loads(text)
+                if not isinstance(subtasks, list):
+                    raise ValueError("Subtasks not a list")
+
+                for sub in subtasks:
+                    if not all(k in sub for k in ("task", "agent", "confidence")):
+                        raise ValueError("Missing keys in subtask")
+                    sub["agent"] = str(sub["agent"]).lower()
+
+                print(f"\nLLM Planner: model={self.model} successfully generated plan.\n")
+                return subtasks
+            except Exception as e:
+                # Make the reason visible in the console so you know why it fell back
+                print(f"LLM plan failed: {e}")
+
+        # Fallback: minimal JSON schema the orchestrator expects
+        return [
+            {"task": "Understand the goal context", "agent": "analyst", "confidence": 0.8},
+            {"task": "Propose an action plan", "agent": "planner", "confidence": 0.7},
+            {"task": "Execute and report results", "agent": "executor", "confidence": 0.7},
+        ]
 
 
 
 
 class PlannerAdapter:
     def __init__(self, use_llm=False, memory=None):
-        self.use_llm = use_llm
+        # Allow env toggle: MYNDRA_USE_LLM=1|true|yes|on
+        env_flag = str(os.getenv("MYNDRA_USE_LLM", "")).lower() in ("1", "true", "yes", "on")
+        self.use_llm = use_llm or env_flag
         self.memory = memory
-        self.llm_planner = LLMPlanner(memory)
+        self.llm_planner = LLMPlanner(memory=memory)
 
     def decompose(self, goal: str):
         """Decompose a goal into subtasks (hierarchical if use_llm=True)."""
@@ -110,10 +143,10 @@ class PlannerAdapter:
         else:
             # simple fallback
             return [
-                {"task": "Define objectives and KPIs", "agent": "AnalystAgent", "depends_on": [], "confidence": 0.9},
-                {"task": "Gather and preprocess data", "agent": "DataAgent", "depends_on": ["Define objectives and KPIs"], "confidence": 0.8},
-                {"task": "Run analysis and extract insights", "agent": "AnalystAgent", "depends_on": ["Gather and preprocess data"], "confidence": 0.7},
-                {"task": "Generate visualizations and summary report", "agent": "SummarizerAgent", "depends_on": ["Run analysis and extract insights"], "confidence": 0.9},
+                {"task": "Define objectives and KPIs", "agent": "analyst", "depends_on": [], "confidence": 0.9},
+                {"task": "Gather and preprocess data", "agent": "executor", "depends_on": ["Define objectives and KPIs"], "confidence": 0.8},
+                {"task": "Run analysis and extract insights", "agent": "analyst", "depends_on": ["Gather and preprocess data"], "confidence": 0.7},
+                {"task": "Generate visualizations and summary report", "agent": "planner", "depends_on": ["Run analysis and extract insights"], "confidence": 0.9},
             ]
 
     def _decompose_with_llm(self, goal: str):
