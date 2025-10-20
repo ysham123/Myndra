@@ -50,17 +50,35 @@ class Profiler:
 
 
     def log_metric(self, key:str, value:float):
-        "record sca;ar metric like gpu initalization or steps/sec."
+        "record scalar metric like gpu initalization or steps/sec."
+        if key not in self.metrics:
+            self.metrics[key] = []
+        self.metrics[key].append(value)
+
         pass
     def get_summary(self):
         "return all collected metrics as a dictionary"
+        summary = {}
+        for key, values in self.metrics.items():
+            if not values:
+                continue
+            summary[key] = {
+                "last":values[-1],
+                "mean":sum(values) / len(values)
+            }
+        return summary
+
     def save(self, path:str):
         "write all collected metrics to a json file for later analysis"
-        pass
+        data = {"timers":self.timers, "metrics":self.metrics}
+        with open(path, "w") as f:
+            json.dump(data, f, indent=4)
 
 
 if __name__ == "__main__":
     profiler = Profiler()
     with profiler.track("sleep_test"):
         time.sleep(0.2)
-    print(profiler.timers)
+    profiler.log_metric("steps_per_second", 1024.5)
+    profiler.save("results.json")
+    print(profiler.get_summary())
