@@ -1,0 +1,14 @@
+{
+    "timers": {
+        "sleep_test": {
+            "start": 1760928862.208113,
+            "end": 1760928862.4105558,
+            "duration_ms": 202.44288444519043
+        }
+    },
+    "metrics": {
+        "steps_per_second": [
+            1024.5
+        ]
+    }
+}
