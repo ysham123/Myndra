@@ -3,7 +3,8 @@ from agents.agent_registry import get_agent
 from systems.profiler import Profiler
 import os
 import json
-
+from systems.async_runtime import AsyncRuntime
+import asyncio
 
 class Orchestrator:
     def __init__(self, registry, memory, use_llm=False):
@@ -15,6 +16,7 @@ class Orchestrator:
             use_llm=os.getenv("MYNDRA_USE_LLM", "0") == "1",
             memory=self.memory
         )
+        self.runtime = AsyncRuntime(max_concurrent=4)
 
     def plan(self, goal):
         subtasks = self.planner.decompose(goal)
@@ -55,43 +57,41 @@ class Orchestrator:
 
 
     def execute(self, assignments):
-        """Execute each assignment and gather results."""
+        """Execute all agent assignments concurrently using AsyncRuntime."""
         results = []
 
-        for assignment in assignments:
-            agent_name = assignment["agent"]
-            task = assignment["task"]
+        try:
+            # Run assignments concurrently via AsyncRuntime
+            results = asyncio.run(self.runtime.run_batch(assignments, lambda a: get_agent(a, self.memory)))
+        except Exception as e:
+            print(f"[Execute] Runtime error: {e}")
+            results = [{"agent": "system", "task": "runtime_error", "output": str(e)}]
 
-            agent_instance = get_agent(agent_name, self.memory)
-            output = agent_instance.act(task)
-            results.append({"agent":agent_name,"task":task,"output":output})
-            
-            #only mold if agent supports it
-            if hasattr(agent_instance, "mold"):
-                agent_instance.mold("successfully completed task")
-                
-        self.memory.write("agent:orchestrator",f"Execution results: {results}")
-
+        self.memory.write("agent:orchestrator", f"Execution results: {results}")
         return results
 
 
     def adapt(self, results):
-        """Optional: adjust agent teams or task flow based on memory feedback."""
+        """Adjust agent teams or task flow based on memory feedback."""
         adjustments = []
 
         for result in results:
-            output = result["output"].lower()
-            agent = result["agent"]
-            task = result["task"]
+            # Handle both old and new formats
+            output = result.get("output") or result.get("result") or ""
+            output_lower = str(output).lower()
 
-            if "error" in output or "failed" in output:
-                action = f"Reassignming task '{task}' due to error in {agent}"
+            agent = result.get("agent", "unknown")
+            task = result.get("task", "unknown")
+
+            if "error" in output_lower or "failed" in output_lower:
+                action = f"Reassigning task '{task}' due to error in {agent}"
                 self.memory.write("orchestrator", action)
                 adjustments.append({"task": task, "action": "reassign"})
             else:
                 action = f"Task '{task}' by {agent} completed successfully"
                 self.memory.write("orchestrator", action)
                 adjustments.append({"task": task, "action": "retain"})
+
         summary = {"adaptations": adjustments}
         self.memory.write("orchestrator", f"Adaptation summary: {summary}")
         return summary
@@ -122,7 +122,9 @@ class Orchestrator:
                 results = self.execute(assignments)
             print("\nExecution Results:")
             for r in results:
-                print(f"  - {r['agent']} → {r['output']}")
+                agent = r.get("agent", "unknown")
+                output = r.get("output", r)
+                print(f"  - {agent} → {output}")
 
             # 4. Adapt
             with self.profiler.track("adapt_latency"):
