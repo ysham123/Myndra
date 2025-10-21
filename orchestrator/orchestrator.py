@@ -1,9 +1,14 @@
 from orchestrator.planner import PlannerAdapter
 from agents.agent_registry import get_agent
+from systems.profiler import Profiler
+import os
+import json
+
 
 class Orchestrator:
     def __init__(self, registry, memory, use_llm=False):
-        import os
+        self.profiler = Profiler()
+
         self.registry = registry
         self.memory = memory
         self.planner = PlannerAdapter(
@@ -16,6 +21,7 @@ class Orchestrator:
         self.memory.write("orchestrator", f"Planned subtasks: {subtasks}")
         return subtasks
 
+        
     def assign(self, subtasks):
         """assign subtasks to appropriate agents. Handles both string and dict subtasks."""
         assignments = []
@@ -48,7 +54,6 @@ class Orchestrator:
         return assignments
 
 
-
     def execute(self, assignments):
         """Execute each assignment and gather results."""
         results = []
@@ -68,6 +73,7 @@ class Orchestrator:
         self.memory.write("agent:orchestrator",f"Execution results: {results}")
 
         return results
+
 
     def adapt(self, results):
         """Optional: adjust agent teams or task flow based on memory feedback."""
@@ -91,43 +97,55 @@ class Orchestrator:
         return summary
 
 
-
-
     def run(self, goal):
         """Run the full orchestration pipeline."""
         print(f"\nGoal: {goal}")
 
-    # 1. Plan
-        subtasks = self.planner.decompose(goal)
-        print("\nPlanned Subtasks:")
-        for t in subtasks:
-            print(f"  - {t}")
+        # Wrap the entire run for a total time
+        with self.profiler.track("total_run_latency"):
+            # 1. Plan
+            with self.profiler.track("plan_latency"):
+                subtasks = self.planner.decompose(goal)
+            print("\nPlanned Subtasks:")
+            for t in subtasks:
+                print(f"  - {t}")
 
-    # 2. Assign
-        assignments = self.assign(subtasks)
-        print("\nAssignments:")
-        for a in assignments:
-            print(f"  - {a['task']} → {a['agent']}")
+            # 2. Assign
+            with self.profiler.track("assign_latency"):
+                assignments = self.assign(subtasks)
+            print("\nAssignments:")
+            for a in assignments:
+                print(f"  - {a['task']} → {a['agent']}")
 
-    # 3. Execute
-        results = self.execute(assignments)
-        print("\nExecution Results:")
-        for r in results:
-            print(f"  - {r['agent']} → {r['output']}")
+            # 3. Execute
+            with self.profiler.track("execute_latency"):
+                results = self.execute(assignments)
+            print("\nExecution Results:")
+            for r in results:
+                print(f"  - {r['agent']} → {r['output']}")
 
-    # 4. Adapt
-        adaptation = self.adapt(results)
-        print("\nAdaptation Summary:")
-        for a in adaptation["adaptations"]:
-            print(f"  - {a['task']} → {a['action']}")
+            # 4. Adapt
+            with self.profiler.track("adapt_latency"):
+                adaptation = self.adapt(results)
+            print("\nAdaptation Summary:")
+            for a in adaptation["adaptations"]:
+                print(f"  - {a['task']} → {a['action']}")
 
-    # New block for final summary
-        print("\nFinal Summary (LLM-driven):")
-        summarizer = get_agent("SummarizerAgent", self.memory)
-        summary = summarizer.act(results)
-        print(summary)
+            # New block for final summary
+            print("\nFinal Summary (LLM-driven):")
+            with self.profiler.track("summarize_latency"):
+                summarizer = get_agent("SummarizerAgent", self.memory)
+                summary = summarizer.act(results)
+            print(summary)
 
-    # 5. Memory Log (optional)
+        # 5. Memory Log (optional)
         print("\nRecent Memory (Orchestrator):")
         for m in self.memory.get_recent("agent:orchestrator"):
             print(f"  • {m['timestamp']} | {m['content']}")
+            
+        # Save profiling results to file
+        self.profiler.save("results/orchestrator_profile.json")
+
+    def print_summary(self):
+        summary = self.profiler.get_summary()
+        print(json.dumps(summary, indent=2))

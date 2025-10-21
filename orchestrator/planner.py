@@ -239,4 +239,4 @@ class PlannerAdapter:
 
     def _decompose_with_llm(self, goal: str):
         """Use an LLM to create a dependency-aware task hierarchy."""
-        return self.llm_planner.decompose(goal) 
+        return self.llm_planner.decompose(goal)

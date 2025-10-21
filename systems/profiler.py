@@ -19,6 +19,7 @@ Usage:
 import time
 import json
 from contextlib import contextmanager
+import os
 
 class Profiler:
     def __init__(self):
@@ -70,6 +71,7 @@ class Profiler:
 
     def save(self, path:str):
         "write all collected metrics to a json file for later analysis"
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         data = {"timers":self.timers, "metrics":self.metrics}
         with open(path, "w") as f:
             json.dump(data, f, indent=4)
