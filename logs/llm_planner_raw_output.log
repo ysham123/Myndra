@@ -1,0 +1,14 @@
+---
+Goal: Analyze performance metrics
+Error: Subtasks not a list
+Raw output:
+{"task":"Define analysis objectives, scope, and success criteria","agent":"planner","confidence":0.95}
+
+---
+Goal: Analyze performance metrics
+Error: Subtasks not a list
+Raw output:
+{
+  "error": "Output must be a JSON list of objects. Please provide only a JSON array like [{\"task\":\"...\",\"agent\":\"...\",\"confidence\":0.9}, ...]."
+}
+
