@@ -6,6 +6,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F 
 from torch.distributions import Categorical
+import numpy as np
+import random
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -96,7 +98,17 @@ def train(env_name="simple_spread_v3", total_steps=5000, log_interval=1000):
     env = MyndraEnvWrapper(env_name)
     profiler = Profiler()
 
-    metrics_path = "results/train_metrics.csv"
+    # Deterministic seeding for reproducibility
+    torch.manual_seed(0)
+    np.random.seed(0)
+    random.seed(0)
+
+    # Structured output paths for multi-seed runs
+    out_dir = Path("results/marl") / env_name / "ippo"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    metrics_path = out_dir / "train_metrics.csv"
+    profile_path = out_dir / "train_profile.json"
+
     start_time = time.time()
     episode_rewards = []
     with open(metrics_path, "w", newline="") as f:
@@ -160,8 +172,20 @@ def train(env_name="simple_spread_v3", total_steps=5000, log_interval=1000):
             buffer.clear()
             print(f"{step} steps collected, updating PPO...")
     env.close()
-    profiler.save("results/marl/train_profile.json")
+    profiler.save(profile_path)
+
+    # Free resources (important for multi-seed runs)
+    del env, agent, buffer
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+
     print("---Training Complete---")
+
+    return {
+        "metrics_csv": str(metrics_path),
+        "profile_json": str(profile_path)
+    }
 
 if __name__ == "__main__":
     train()
