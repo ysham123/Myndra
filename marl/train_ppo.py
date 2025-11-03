@@ -1,12 +1,20 @@
 import time
 import csv
+import sys
+from pathlib import Path
+import torch
 import torch.nn as nn
 import torch.nn.functional as F 
 from torch.distributions import Categorical
+
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 from marl.env_wrapper import MyndraEnvWrapper
 from systems.profiler import Profiler
 
-class PPOAgent:
+class PPOAgent(nn.Module):
     def __init__(self, obs_dim, act_dim, lr=3e-4):
         super().__init__()
         
@@ -14,7 +22,7 @@ class PPOAgent:
             nn.Linear(obs_dim, 64),
             nn.Tanh(),
             nn.Linear(64, act_dim),
-            nn.Softmax(dim=1)
+            nn.Softmax(dim=-1)
         )
         self.critic = nn.Sequential(
             nn.Linear(obs_dim, 64),
@@ -22,7 +30,7 @@ class PPOAgent:
             nn.Linear(64, 1)
         )
 
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+        self.optimizer = torch.optim.Adam(list(self.actor.parameters()) + list(self.critic.parameters()), lr=lr)
     
     def act(self, obs):
         #given an observation, sample an action and return log prob
@@ -34,14 +42,24 @@ class PPOAgent:
         return action.item(), log_prob.item()
 
     def update(self, buffer, gamma=0.99, clip_eps=0.2, epochs=4):
-        obs, actions, rewards, next_obs, dones, old_log_probs = map(
-            lambda x: torch.tensor(x, dtype=torch.float32), zip(*buffer.storage)
-        ) 
+        # Convert buffer data to numpy first, then to tensors
+        import numpy as np
+        data = list(zip(*buffer.storage))
+        obs = torch.tensor(np.array(data[0]), dtype=torch.float32)
+        actions = torch.tensor(np.array(data[1]), dtype=torch.int64)
+        rewards = torch.tensor(np.array(data[2]), dtype=torch.float32)
+        next_obs = torch.tensor(np.array(data[3]), dtype=torch.float32)
+        dones = torch.tensor(np.array(data[4]), dtype=torch.float32)
+        old_log_probs = torch.tensor(np.array(data[5]), dtype=torch.float32)
 
-        values = self.critic(obs).squeeze()
-        next_values = self.critic(next_obs).squeeze()
-        targets = rewards + gamma * next_values * (1-dones)
-        advantages = targets - values.detach()
+        # Compute advantages once, detached from computation graph
+        with torch.no_grad():
+            values = self.critic(obs).squeeze()
+            next_values = self.critic(next_obs).squeeze()
+            targets = rewards + gamma * next_values * (1-dones)
+            advantages = targets - values
+            # Normalize advantages for stability
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         for _ in range(epochs):
             probs = self.actor(obs)
@@ -78,7 +96,7 @@ def train(env_name="simple_spread_v3", total_steps=5000, log_interval=1000):
     env = MyndraEnvWrapper(env_name)
     profiler = Profiler()
 
-    metrics_path = "results/marl/train_metrics.csv"
+    metrics_path = "results/train_metrics.csv"
     start_time = time.time()
     episode_rewards = []
     with open(metrics_path, "w", newline="") as f:
@@ -92,20 +110,36 @@ def train(env_name="simple_spread_v3", total_steps=5000, log_interval=1000):
     step = 0
 
     while step < total_steps:
-        profiler.track_start("rollout")
-        #collection experience
-        actions = {a:agent.act(obs[a]) for a in env.agents}
+        profiler.start("rollout")
+        
+        # Check if we need to reset (no agents have observations)
+        if not obs or len(obs) == 0:
+            obs = env.reset()
+        
+        #collection experience - only act for agents with observations
+        active_agents = [a for a in env.agents if a in obs]
+        if not active_agents:
+            obs = env.reset()
+            active_agents = [a for a in env.agents if a in obs]
+        
+        action_log_probs = {a: agent.act(obs[a]) for a in active_agents}
+        actions = {a: action_log_probs[a][0] for a in active_agents}  # Extract just the actions
+        log_probs = {a: action_log_probs[a][1] for a in active_agents}  # Extract log probs
+        
         next_obs, rewards, dones, infos = env.step(actions)
         # track average reward
-        avg_reward = sum(rewards.values()) / len(rewards)
-        episode_rewards.append(avg_reward)
+        if rewards:
+            avg_reward = sum(rewards.values()) / len(rewards)
+            episode_rewards.append(avg_reward)
 
-        for a in env.agents:
-            buffer.add(obs[a], actions[a], rewards[a], next_obs[a], dones[a], None)
+        # Only add experiences for agents that have data in this step
+        for a in active_agents:
+            if a in rewards and a in next_obs:
+                buffer.add(obs[a], actions[a], rewards[a], next_obs[a], dones[a], log_probs[a])
         obs = next_obs
         step += 1
 
-        profiler.track_end("rollout")
+        profiler.stop("rollout")
 
         #occasionally update PPO
 
@@ -120,9 +154,9 @@ def train(env_name="simple_spread_v3", total_steps=5000, log_interval=1000):
 
             episode_rewards.clear()
 
-            profiler.track_start("update")
+            profiler.start("update")
             agent.update(buffer)
-            profiler.track_end("update")
+            profiler.stop("update")
             buffer.clear()
             print(f"{step} steps collected, updating PPO...")
     env.close()

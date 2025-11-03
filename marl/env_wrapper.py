@@ -18,6 +18,11 @@ class MyndraEnvWrapper:
         self.agents = self.env.possible_agents
         self.episode_rewards = {agent: 0.0 for agent in self.agents}
         self.steps = 0
+        
+        # Get observation and action space dimensions from any agent (all agents have same spaces)
+        first_agent = self.agents[0]
+        self.obs_size = self.env.observation_space(first_agent).shape[0]
+        self.act_size = self.env.action_space(first_agent).n
 
     def reset(self, seed=None):
         """Reset the environment and return the initial observations."""
@@ -32,7 +37,9 @@ class MyndraEnvWrapper:
         Returns obs, rewards, dones, infos — all dicts keyed by agent.
         """
         obs, rewards, terms, truncs, infos = self.env.step(actions)
-        dones = {agent: terms[agent] or truncs[agent] for agent in self.agents}
+        # Use keys from the returned dicts instead of self.agents
+        # since some agents might be removed when done
+        dones = {agent: terms.get(agent, False) or truncs.get(agent, False) for agent in self.agents}
 
         # Update episode stats
         for agent, r in rewards.items():
