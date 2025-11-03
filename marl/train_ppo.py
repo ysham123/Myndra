@@ -94,17 +94,25 @@ class RolloutBuffer:
 
 #training loop
 
-def train(env_name="simple_spread_v3", total_steps=5000, log_interval=1000):
+def train(env_name="simple_spread_v3", total_steps=5000, log_interval=1000, seed=None):
     env = MyndraEnvWrapper(env_name)
     profiler = Profiler()
 
     # Deterministic seeding for reproducibility
-    torch.manual_seed(0)
-    np.random.seed(0)
-    random.seed(0)
+    if seed is not None:
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
+    else:
+        torch.manual_seed(0)
+        np.random.seed(0)
+        random.seed(0)
 
     # Structured output paths for multi-seed runs
-    out_dir = Path("results/marl") / env_name / "ippo"
+    if seed is not None:
+        out_dir = Path("results/marl") / env_name / "ippo" / f"seed_{seed}"
+    else:
+        out_dir = Path("results/marl") / env_name / "ippo"
     out_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = out_dir / "train_metrics.csv"
     profile_path = out_dir / "train_profile.json"
