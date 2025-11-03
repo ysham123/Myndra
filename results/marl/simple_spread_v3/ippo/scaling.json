@@ -1,0 +1,14 @@
+[
+  {
+    "actors": 2,
+    "mean_sps": 1032.5405167079607,
+    "std_sps": 0,
+    "n_seeds": 1
+  },
+  {
+    "actors": 8,
+    "mean_sps": 1594.9740284112202,
+    "std_sps": 0,
+    "n_seeds": 1
+  }
+]
