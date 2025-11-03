@@ -45,22 +45,60 @@ def aggregate_results(env_name, method, seeds):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default="simple_spread_v3")
-    parser.add_argument("--method", type=str, default="ippo")
+    parser.add_argument("--method", type=str, default="ippo", 
+                       help="Method: 'ippo' for baseline, 'myndra_mappo' for planner-aware")
     parser.add_argument("--seeds", type=int, default=5)
     parser.add_argument("--steps", type=int, default=5000)
+    # Planner-specific arguments
+    parser.add_argument("--interval", type=int, default=32, 
+                       help="Planner update interval (steps)")
+    parser.add_argument("--context-dim", type=int, default=4,
+                       help="Dimensionality of planner context vector")
+    parser.add_argument("--planner-cache", choices=["on", "off"], default="on",
+                       help="Whether to cache planner context between intervals")
+    parser.add_argument("--actors", type=int, default=1,
+                       help="Number of parallel actor environments for rollouts")
+    parser.add_argument("--amp", choices=["on", "off"], default="off",
+                       help="Enable automatic mixed precision (AMP)")
+    parser.add_argument("--compile", choices=["on", "off"], default="off",
+                       help="Enable torch.compile() for models")
     args = parser.parse_args()
 
     env_name = args.env
     method = args.method
     seeds = args.seeds
     total_steps = args.steps
+    
+    # Determine if planner should be used based on method name
+    use_planner = (method == "myndra_mappo")
+    planner_interval = args.interval
+    context_dim = args.context_dim
+    planner_cache = (args.planner_cache == "on")
+    actors = args.actors
+    use_amp = (args.amp == "on")
+    use_compile = (args.compile == "on")
 
     print(f" Running {method.upper()} on {env_name} for {seeds} seeds ({total_steps} steps each)")
+    print(f"  Actors: {actors}, AMP: {use_amp}, Compile: {use_compile}")
+    if use_planner:
+        print(f"  Planner: interval={planner_interval}, context_dim={context_dim}, cache={planner_cache}")
 
     for seed in range(seeds):
         print(f"\n Starting seed {seed} ...")
         os.environ["PYTHONHASHSEED"] = str(seed)
-        result = train(env_name=env_name, total_steps=total_steps, seed=seed)
+        result = train(
+            env_name=env_name, 
+            total_steps=total_steps, 
+            seed=seed,
+            use_planner=use_planner,
+            planner_interval=planner_interval,
+            context_dim=context_dim,
+            planner_cache=planner_cache,
+            method=method,
+            actors=actors,
+            use_amp=use_amp,
+            use_compile=use_compile
+        )
         print(f"Finished seed {seed} → {result['metrics_csv']}")
 
     # Aggregate all results
