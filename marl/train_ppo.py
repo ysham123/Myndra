@@ -125,7 +125,7 @@ class RolloutBuffer:
 
 def train(env_name="simple_spread_v3", total_steps=5000, log_interval=1000, seed=None,
           use_planner=False, planner_interval=32, context_dim=4, planner_cache=True, method="ippo",
-          actors=1, use_amp=False, use_compile=False):
+          actors=1, use_amp=False, use_compile=False, target_return=None):
     # Create multiple environments for parallel rollouts
     envs = [MyndraEnvWrapper(env_name) for _ in range(actors)]
     profiler = Profiler()
@@ -164,6 +164,9 @@ def train(env_name="simple_spread_v3", total_steps=5000, log_interval=1000, seed
 
     start_time = time.time()
     episode_rewards = []
+    time_to_target = None  # Will be set when target is reached
+    target_reached = False
+    
     with open(metrics_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["step", "mean_reward", "steps_per_second", "elapsed_sec", 
@@ -238,6 +241,13 @@ def train(env_name="simple_spread_v3", total_steps=5000, log_interval=1000, seed
             elapsed = time.time() - start_time
             steps_per_second = step / elapsed if elapsed > 0 else 0
             mean_reward = sum(episode_rewards) / len(episode_rewards) if episode_rewards else 0
+            
+            # Check if target return is reached
+            if target_return is not None and not target_reached and mean_reward >= target_return:
+                time_to_target = elapsed
+                target_reached = True
+                profiler.log_metric("time_to_target_return_sec", time_to_target)
+                print(f"  Target return {target_return} reached at step {step} ({time_to_target:.2f}s)")
 
             with open(metrics_path, "a", newline="") as f:
                 writer = csv.writer(f)
@@ -250,6 +260,12 @@ def train(env_name="simple_spread_v3", total_steps=5000, log_interval=1000, seed
             profiler.start("update")
             agent.update(buffer, use_amp=use_amp)
             profiler.stop("update")
+            
+            # Sample GPU utilization after update
+            gpu_util = profiler.sample_gpu_util()
+            if gpu_util is not None:
+                profiler.log_metric("gpu_util_percent", gpu_util)
+            
             buffer.clear()
             print(f"{step} steps collected, updating PPO...")
     # Close all environments

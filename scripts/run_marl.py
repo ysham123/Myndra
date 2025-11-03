@@ -62,6 +62,8 @@ def main():
                        help="Enable automatic mixed precision (AMP)")
     parser.add_argument("--compile", choices=["on", "off"], default="off",
                        help="Enable torch.compile() for models")
+    parser.add_argument("--target-return", type=float, default=None,
+                       help="Target mean reward to track time-to-target (optional)")
     args = parser.parse_args()
 
     env_name = args.env
@@ -77,9 +79,12 @@ def main():
     actors = args.actors
     use_amp = (args.amp == "on")
     use_compile = (args.compile == "on")
+    target_return = args.target_return
 
     print(f" Running {method.upper()} on {env_name} for {seeds} seeds ({total_steps} steps each)")
     print(f"  Actors: {actors}, AMP: {use_amp}, Compile: {use_compile}")
+    if target_return is not None:
+        print(f"  Target return: {target_return}")
     if use_planner:
         print(f"  Planner: interval={planner_interval}, context_dim={context_dim}, cache={planner_cache}")
 
@@ -97,7 +102,8 @@ def main():
             method=method,
             actors=actors,
             use_amp=use_amp,
-            use_compile=use_compile
+            use_compile=use_compile,
+            target_return=target_return
         )
         print(f"Finished seed {seed} → {result['metrics_csv']}")
 

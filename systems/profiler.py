@@ -20,6 +20,7 @@ import time
 import json
 from contextlib import contextmanager
 import os
+import subprocess
 
 class Profiler:
     def __init__(self):
@@ -55,8 +56,34 @@ class Profiler:
         if key not in self.metrics:
             self.metrics[key] = []
         self.metrics[key].append(value)
-
-        pass
+    
+    def sample_gpu_util(self):
+        """Sample GPU utilization percentage. Returns None if no GPU or error."""
+        try:
+            # Try nvidia-smi first
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
+                capture_output=True,
+                text=True,
+                timeout=1.0
+            )
+            if result.returncode == 0:
+                # Get first GPU utilization
+                util = float(result.stdout.strip().split('\n')[0])
+                return util
+        except (FileNotFoundError, subprocess.TimeoutExpired, ValueError, IndexError):
+            pass
+        
+        # Fallback to torch CUDA utilization if available
+        try:
+            import torch
+            if torch.cuda.is_available():
+                util = torch.cuda.utilization(0)  # Device 0
+                return float(util) if util is not None else None
+        except (ImportError, RuntimeError):
+            pass
+        
+        return None
     def get_summary(self):
         "return all collected metrics as a dictionary"
         summary = {}
