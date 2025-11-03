@@ -1,89 +1,162 @@
-# Myndra: Multi-Agent Orchestration Framework
+# Myndra v2: Planner-Aware Multi-Agent Reinforcement Learning
 
-**Current Version:** v1.1 (October 2025)  
-**Focus:** Orchestrator & LLM Planner Integration
+**Current Version:** v2.0 (November 2025)  
+**Focus:** Scalable MARL with Lightweight Planner Context Integration
 
 ---
 
 ## Overview
 
-Myndra is a research-oriented multi-agent orchestration framework designed for adaptive, human-in-the-loop collaboration. It features a dynamic orchestrator that plans, assigns, executes, and summarizes tasks among moldable agents that adapt based on shared memory and feedback. Currently, Myndra is on a path toward becoming a full **Multi-Agent Reinforcement Learning (MARL)** framework within approximately 1.5 months, aiming to integrate learning-based agent policies and environment interaction for autonomous multi-agent coordination.
+Myndra v2 is a research framework for **planner-aware multi-agent reinforcement learning (MARL)**. It demonstrates how lightweight goal decomposition from a deterministic planner can be injected into agent observations to improve coordination—without requiring heavy LLM inference in the rollout loop. The system supports multi-actor rollouts, automatic mixed precision (AMP), torch.compile(), and comprehensive profiling for reproducible MARL research.
 
 ---
 
-## Key Features (v1.1)
+## Key Features (v2.0)
 
-- **Adaptive Orchestration:** Real-time task planning and agent role assignment  
-- **Moldable Agents:** Behavior shaped by shared episodic and long-term memory  
-- **Hybrid Memory System:** Combines short-term episodic buffers with a semantic knowledge graph  
-- **LLM Planner Integration:** Supports `gpt-5-mini` by default and optional `gpt-5` for complex reasoning  
-- **Fallback Planner:** Deterministic planner available when LLM is disabled  
-- **Agent Registry:** Stable agent naming and modular implementation  
-- **Testing Suite:** Ongoing development for memory and orchestrator components  
+- **Planner Context Injection:** Lightweight goal vectors appended to agent observations
+- **Multi-Actor Rollouts:** Parallel environment collection with `--actors {1,2,4,8}`
+- **PPO Implementation:** Stable policy gradient training with clipped surrogate objective
+- **AMP Support:** Automatic mixed precision with GradScaler for throughput
+- **torch.compile():** Model compilation toggle for optimized inference
+- **System Metrics:** GPU utilization tracking and time-to-target-return logging
+- **Reproducible Experiments:** Deterministic seeding across `torch`, `numpy`, `random`
+- **Visualization Suite:** Learning curves, AUC analysis, scaling plots, ablation comparisons
 
 ---
 
-## Architecture
+## Repository Structure
 
 ```
-├── agents/             # Agent implementations and registry
-├── memory/             # Episodic and knowledge graph memory modules
-├── orchestrator/       # Orchestrator and planner logic
-├── interface/          # User interaction components
-└── main.py             # Entry point
+Myndra/
+├── marl/
+│   ├── env_wrapper.py       # PettingZoo environment wrapper with planner context
+│   └── train_ppo.py         # PPO agent + training loop
+├── scripts/
+│   ├── run_marl.py          # Multi-seed orchestration script
+│   ├── plot_curves.py       # Learning curve + AUC plotting
+│   ├── plot_scaling.py      # Actor scaling analysis
+│   └── plot_ablations.py    # Method comparison plots
+├── systems/
+│   └── profiler.py          # Lightweight profiling (timers, GPU util)
+├── results/marl/            # Experiment outputs (CSV, JSON, PNG)
+└── requirements.txt         # Python dependencies
 ```
 
 ---
 
-## Roadmap
+## Quickstart
 
-### v1.2 (Upcoming)
-
-- EvaluatorAgent for automated grading and run-time critique  
-- Enhanced memory retrieval with decay and relevance scoring  
-- Domain-specific adapters (e.g., radiology image QA, tabular analytics)  
-
-### MARL Development Plan (v1.2 → v2.0)
-
-This ongoing open-source research project aims to transition Myndra into a full Multi-Agent Reinforcement Learning (MARL) framework over the next approximately 1.5 months. The development plan focuses on key milestones including the implementation of an EvaluatorAgent for reward modeling, development of an environment interface for agent interaction, integration of agent policy learning mechanisms, and the establishment of a MARL training loop. These efforts will enable autonomous, learning-driven multi-agent coordination within the Myndra ecosystem.
-
-### v2.0 (Research-Ready)
-
-- Comprehensive evaluation harness with reproducible datasets and metrics  
-- Dataset adapters (DICOM, CSV, JSON) and de-identification tools  
-- Reliability guardrails including self-checks, re-planning, and timeouts  
-- Technical report and academic publications  
-
----
-
-## Getting Started
+### Installation
 
 ```bash
 git clone https://github.com/ysham123/Myndra.git
 cd Myndra
-python -m venv venv && source venv/bin/activate
+python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Set environment variables:
+### Run Baseline IPPO (5 seeds)
 
 ```bash
-export OPENAI_API_KEY=your_api_key
-export MYNDRA_USE_LLM=1         # Enable LLM planner (optional)
-export MYNDRA_PLANNER_MODEL=gpt-5-mini  # Default planner model
+./venv/bin/python3 scripts/run_marl.py \
+  --env simple_spread_v3 \
+  --method ippo \
+  --seeds 5 \
+  --steps 5000 \
+  --actors 4
 ```
 
-Run the application:
+### Run Planner-Aware Myndra-MAPPO
 
 ```bash
-python3 main.py
+./venv/bin/python3 scripts/run_marl.py \
+  --env simple_spread_v3 \
+  --method myndra_mappo \
+  --seeds 5 \
+  --steps 5000 \
+  --actors 4 \
+  --interval 32 \
+  --context-dim 4
 ```
 
-Run tests:
+### Run with AMP or Compile
 
 ```bash
-pytest -v
+# AMP (automatic mixed precision)
+./venv/bin/python3 scripts/run_marl.py \
+  --env simple_spread_v3 \
+  --method ippo \
+  --seeds 3 \
+  --steps 3000 \
+  --actors 4 \
+  --amp on
+
+# torch.compile()
+./venv/bin/python3 scripts/run_marl.py \
+  --env simple_spread_v3 \
+  --method ippo \
+  --seeds 3 \
+  --steps 3000 \
+  --actors 4 \
+  --compile on
 ```
+
+### Generate Plots
+
+```bash
+# Learning curves + AUC
+./venv/bin/python3 scripts/plot_curves.py \
+  --env simple_spread_v3 \
+  --method ippo
+
+# Scaling analysis
+./venv/bin/python3 scripts/plot_scaling.py \
+  --env simple_spread_v3 \
+  --method ippo \
+  --actors 1 2 4 8
+
+# Ablation comparison
+./venv/bin/python3 scripts/plot_ablations.py \
+  --env simple_spread_v3 \
+  --methods ippo myndra_mappo
+```
+
+---
+
+## Results
+
+**Environment:** `simple_spread_v3` (PettingZoo MPE)  
+**Training:** 5000 steps, 5 seeds, log_interval=1000
+
+| Method           | Actors | Steps/s  | AUC (mean ± 95% CI)      | Planner Latency P95 (ms) |
+|------------------|--------|----------|--------------------------|---------------------------|
+| IPPO             | 1      | ~800     | 4325 [4198, 4453]        | –                         |
+| IPPO             | 2      | ~1033    | –                        | –                         |
+| IPPO             | 4      | ~1071    | –                        | –                         |
+| IPPO             | 8      | ~1595    | –                        | –                         |
+| Myndra-MAPPO     | 4      | ~1510    | –                        | 0.004                     |
+| IPPO + AMP       | 2      | ~772     | –                        | –                         |
+
+**Key Observations:**
+- Sub-linear scaling with actors (expected on CPU)
+- Planner overhead negligible (~0.004ms P95)
+- AMP stable, no NaNs observed
+- Reward curves consistent across methods (-1.0 to -1.2)
+
+---
+
+## Toggles & Ablations
+
+| Flag               | Values           | Description                                      |
+|--------------------|------------------|--------------------------------------------------|
+| `--method`         | `ippo`, `myndra_mappo` | Baseline vs planner-aware MARL             |
+| `--actors`         | `1,2,4,8`        | Number of parallel actor environments            |
+| `--interval`       | int (default: 32)| Planner context update frequency (steps)         |
+| `--context-dim`    | int (default: 4) | Dimensionality of planner context vector         |
+| `--planner-cache`  | `on`, `off`      | Cache planner context between intervals          |
+| `--amp`            | `on`, `off`      | Automatic mixed precision (AMP)                  |
+| `--compile`        | `on`, `off`      | torch.compile() for actor/critic networks        |
+| `--target-return`  | float or None    | Track time to reach target mean reward           |
 
 ---
 
