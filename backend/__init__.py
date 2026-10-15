@@ -1,3 +1,0 @@
-"""
-Myndra Radiology Backend API
-"""

@@ -2,7 +2,7 @@
 Profiler module for Myndra v2
 --------------------------------
 Lightweight timing and metrics logger used across orchestrator,
-agents, and domains (MARL, Radiology).
+agents, and domains (MARL).
 Tracks latency, throughput, GPU utilization, and custom metrics.
 
 Usage:
